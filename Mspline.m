@@ -18,6 +18,4 @@ else
     y = coeff * (recursiveM1 + recursiveM2);
 end
 
-
-
 end
