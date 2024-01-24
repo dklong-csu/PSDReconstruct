@@ -2,7 +2,8 @@
 
 clc
 clear variables
-% close all
+close all
+addpath("DRAM\")
 
 rng('default')
 %%  Data
@@ -20,6 +21,11 @@ calib = readmatrix('Determination of calibration curve.xlsx',...
 dataSizeAvg = calib(:,3);
 dataSizeStdDev = calib(:,4);
 dataVR = calib(:,2);
+
+%%  Lukas method
+fitvars = polyfit(dataVR,log(dataSizeAvg),3);      
+vr_plot = linspace(6,11,100);
+y_fit = fitvars(1)*vr_plot.^3 + fitvars(2)*vr_plot.^2 + fitvars(3)*vr_plot + fitvars(4); 
 
 %%  User settings
 %   What degree polynomial?
@@ -93,7 +99,8 @@ end
 
 figure
 errorbar(dataVR, dataSizeAvg, 2*dataSizeStdDev,...
-    "vertical","o")
+    "vertical","o",...
+    'DisplayName','Data')
 
 
 hold on
@@ -105,13 +112,19 @@ for iii=1:size(calib,1)
     diamplot = linspace(mu-4*sigma,mu+4*sigma,nPlotPts);
     probs = normpdf(diamplot,mu, sigma);
     probs = probs/max(probs);
-    plot(probs+dataVR(iii), diamplot)
+    plot(probs+dataVR(iii), diamplot,'HandleVisibility','off')
     
     patch([dataVR(iii)*ones(1,nPlotPts), fliplr(probs+dataVR(iii))],...
         [diamplot, fliplr(diamplot)],...
         'k',...
-        'FaceAlpha',0.1)
+        'FaceAlpha',0.1,...
+        'HandleVisibility','off')
 end
 
-plot(VRplot,diamSimPlot)
+plot(VRplot,diamSimPlot,'LineWidth',2,'DisplayName','Spline')
+plot(vr_plot,exp(y_fit),'LineStyle','--','LineWidth',2,'DisplayName','Cubic')
+xlabel('Retention volume / ml')
+ylabel('Particle core size / nm')
+legend
+set(gca,'YScale','log')
 hold off
