@@ -2,10 +2,14 @@
 
 clc
 clear variables
-close all
+% close all
 addpath("DRAM\")
 
 rng('default')
+%%  Todo
+%   large retention volume -> size=0
+%   continue slope for small retention volume?
+%   Bayes factor
 %%  Data
 chromatograms = readmatrix('Determination of calibration curve.xlsx',...
     'Sheet', 'Chromatograms',...
@@ -23,15 +27,15 @@ dataSizeStdDev = calib(:,4);
 dataVR = calib(:,2);
 
 %%  Lukas method
-fitvars = polyfit(dataVR,log(dataSizeAvg),3);      
+fitvars = polyfit(dataVR,log10(dataSizeAvg),3);      
 vr_plot = linspace(6,11,100);
 y_fit = fitvars(1)*vr_plot.^3 + fitvars(2)*vr_plot.^2 + fitvars(3)*vr_plot + fitvars(4); 
 
 %%  User settings
 %   What degree polynomial?
-k = 3;
+k = 2;
 %   How many interior points for the spline
-n = 2;
+n = 1;
 %   How far beyond data should spline go?
 factor = 1.01;
 %   How many optimization iterations
@@ -99,8 +103,10 @@ end
 
 figure
 errorbar(dataVR, dataSizeAvg, 2*dataSizeStdDev,...
-    "vertical","o",...
-    'DisplayName','Data')
+    "vertical","x",...
+    'DisplayName','Data',...
+    'LineWidth',1.5,...
+    'CapSize',10)
 
 
 hold on
@@ -122,9 +128,36 @@ for iii=1:size(calib,1)
 end
 
 plot(VRplot,diamSimPlot,'LineWidth',2,'DisplayName','Spline')
-plot(vr_plot,exp(y_fit),'LineStyle','--','LineWidth',2,'DisplayName','Cubic')
+plot(vr_plot,10.^(y_fit),'LineStyle','--','LineWidth',2,'DisplayName','Cubic')
 xlabel('Retention volume / ml')
 ylabel('Particle core size / nm')
 legend
-set(gca,'YScale','log')
+% set(gca,'YScale','log')
+hold off
+
+
+%%
+%--------------------------------------------------------------------------
+%   Plot of polynomial basis functions
+%--------------------------------------------------------------------------
+figure
+title('Fit of cubic to log10(data)')
+ylabel('log10(diameter)')
+xlabel('Retention volume')
+scatter(dataVR, log10(dataSizeAvg),'DisplayName','Data')
+hold on
+
+y_fit3 = fitvars(1)*vr_plot.^3;
+plot(vr_plot,y_fit3,'k--','DisplayName','Basis 1')
+
+y_fit2 = fitvars(2)*vr_plot.^2;
+plot(vr_plot,y_fit2,'k--','DisplayName','Basis 2')
+
+y_fit1 = fitvars(3)*vr_plot.^1;
+plot(vr_plot,y_fit1,'k--','DisplayName','Basis 3')
+
+y_fit0 = fitvars(4)*vr_plot.^0;
+plot(vr_plot,y_fit0,'k--','DisplayName','Basis 4')
+
+plot(vr_plot,y_fit,'LineStyle','-','LineWidth',2,'DisplayName','Sum of Basis 1-4')
 hold off

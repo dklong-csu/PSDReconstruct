@@ -3,12 +3,12 @@
 % clear vars
 % clc
 %%  Settings
-interiorKnots = [6.3556    6.5    6.6];
-splineDegree = 2;
+interiorKnots = bestPrm(1:n);
+splineDegree = k;
 leftEndPoint = 6.1370/1.01;
 rightEndPoint = 10.2835*1.01;
-constFcn = 114.5394;
-coeffs = [-53.2329   -0.0763   -5.2357  -38.5748  -15.5419]';
+constFcn = bestPrm(n+1);
+coeffs = bestPrm(n+2:end);
 
 %%  Form spline
 knots = makeValidKnots(interiorKnots, splineDegree, leftEndPoint, rightEndPoint);
@@ -30,10 +30,10 @@ F2 = constFcn + sum(coeffs .* I,1);
 figure
 hold on
 for iii=1:nBasisFcns
-    plot(x,M(iii,:));
-    % plot(x,I(iii,:))
+    % plot(x,M(iii,:));
+    plot(x,I(iii,:))
     pause(1)
 end
 % plot(x,F,'LineWidth',2)
-% plot(x,F2,'Linewidth',2)
+plot(x,F2,'Linewidth',2)
 hold off
