@@ -3,7 +3,6 @@
 clc
 clear variables
 % close all
-addpath("mcmcstat\")
 addpath("gwmcmc\")
 
 rng('default')
