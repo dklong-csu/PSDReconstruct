@@ -3,7 +3,8 @@
 clc
 clear variables
 % close all
-addpath("DRAM\")
+addpath("mcmcstat\")
+addpath("gwmcmc\")
 
 rng('default')
 %%  Todo
@@ -90,43 +91,44 @@ A(end,n+1:end) = -ones(1,length(prm0)-n);
 b = zeros(size(A,1),1);
 b(1:n-1) = -0.1 * ones(n-1,1);
 bestPrmGlobal = simulannealbnd(F,prm0,lb,ub,optOptions);
-bestPrm = fmincon(F,bestPrmGlobal,A,b,[],[],lb,ub,[],optOptions);
+[bestPrm,fvalmin] = fmincon(F,bestPrmGlobal,A,b,[],[],lb,ub,[],optOptions);
 
 %%  Bayesian inversion
 %   Evaluate log likelihood at parameters from fmincon
 
+% 
+logLikeli = @(prm) -SECCostFunction(prm,k,M,VRmin,VRmax,dataVR,dataSizeAvg,dataSizeStdDev.^2);
+%   Prior distribution matching linear constrains in fmincon. This will
+%   result in "1" if constraints are met (i.e. log prior=-1) and "0" if
+%   constraints are not met (i.e. log prior = -Inf)
+logPrior = @(prm) -1 ./ all(A*(prm) <= b);
 
-logLikeli = @(prm) -F(prm);
-logPrior = @(prm) 1;
+logPfun = @(prm) logLikeli(prm) + logPrior(prm);
+Nwalker=40;
+minit = (1+ 0.01*unifrnd(-1,1,nPrm,Nwalker)).*(bestPrm');
 
-%   Negative Second deriv of log likelihood
-clc
-H = -computeHessian(logLikeli, bestPrm, 1e-3);
-%   Laplace approximation: N(xbest, H^-1)
-S = inv(H);
+tic
+models = gwmcmc(minit, logPfun, 10000, 'StepSize',2);
+toc
+models=models(:,:);
 
-%   Initial points drawn from points near fmincon result
-%       Rows are different parameters
-%       Columns are different chains
-n_chains = 4;
-initS = 2.4^2/length(bestPrm) * S;
-samp0 = mvnrnd(bestPrm,initS,n_chains)';
-mcmc = DRAM(logLikeli, logPrior, samp0,...
-    "initCov",initS,...
-    "nChains",n_chains,...
-    "nBurnedSamples",25,...
-    "nAdaptSamples",0,...
-    "nSamples",3000,...
-    "updateEveryN",100,...
-    "reprintHeaderEveryN",10,...
-    "delayStages",0,...
-    "covEpsilon",1,...
-    "covarReduce",0.1);
-mymap = parula;
-vars = ["Knot1", "Knot2", "C0", "C1", "C2"];
-t = plotPosterior(mcmc,vars,mymap);
 
-%%  Plots
+
+%%
+VRplot = linspace(VRmin,VRmax-1e-6)';
+modelfcn = @(x,prm) IsplineEval(x,prm,k,M,VRmin,VRmax);
+
+hold on
+
+for iii=1:size(models,2)
+    plot(VRplot, modelfcn(VRplot, models(:,iii)),'k')
+end
+
+
+
+
+
+%  Plots
 
 knots = makeValidKnots(bestPrm(1:n),k,VRmin,VRmax);
 VRplot = linspace(VRmin,VRmax-1e-6);
@@ -135,7 +137,7 @@ for iii=1:M
     diamSimPlot = diamSimPlot + bestPrm(n+iii+1)*Ispline(VRplot,k,iii,knots);
 end
 
-figure
+% figure
 errorbar(dataVR, dataSizeAvg, 2*dataSizeStdDev,...
     "vertical","x",...
     'DisplayName','Data',...
@@ -143,7 +145,6 @@ errorbar(dataVR, dataSizeAvg, 2*dataSizeStdDev,...
     'CapSize',10)
 
 
-hold on
 for iii=1:size(calib,1)
     %   FIXME - automate variable for the data
     mu = dataSizeAvg(iii);
@@ -165,81 +166,12 @@ plot(VRplot,diamSimPlot,'LineWidth',2,'DisplayName','Spline')
 plot(vr_plot,10.^(y_fit),'LineStyle','--','LineWidth',2,'DisplayName','Cubic')
 xlabel('Retention volume / ml')
 ylabel('Particle core size / nm')
-legend
+% legend
 % set(gca,'YScale','log')
 hold off
 
 
-%%
-%--------------------------------------------------------------------------
-%   Plot of polynomial basis functions
-%--------------------------------------------------------------------------
-figure
-title('Fit of cubic to log10(data)')
-ylabel('log10(diameter)')
-xlabel('Retention volume')
-scatter(dataVR, log10(dataSizeAvg),'DisplayName','Data')
-hold on
-
-y_fit3 = fitvars(1)*vr_plot.^3;
-plot(vr_plot,y_fit3,'k--','DisplayName','Basis 1')
-
-y_fit2 = fitvars(2)*vr_plot.^2;
-plot(vr_plot,y_fit2,'k--','DisplayName','Basis 2')
-
-y_fit1 = fitvars(3)*vr_plot.^1;
-plot(vr_plot,y_fit1,'k--','DisplayName','Basis 3')
-
-y_fit0 = fitvars(4)*vr_plot.^0;
-plot(vr_plot,y_fit0,'k--','DisplayName','Basis 4')
-
-plot(vr_plot,y_fit,'LineStyle','-','LineWidth',2,'DisplayName','Sum of Basis 1-4')
-hold off
 
 
 
-%%  Helper function
-function H = computeHessian(F, x0, dx)
-    %   Central differences
-    ndims = length(x0);
-    H = zeros(ndims,ndims);
-    for iii=1:ndims
-        for jjj=iii:ndims
-            if iii==jjj
-                h = dx * x0(iii);
-                x1 = x0;
-                x1(iii) = x1(iii)+h;
-                x2 = x0;
-                x2(iii) = x2(iii) - h;
-                H(iii,iii) = ( F(x1) - 2*F(x0) + F(x2) )/(h^2);
-            else
-                hiii = dx * x0(iii);
-                hjjj = dx * x0(jjj);
-                
-                x1 = x0;
-                x1(iii) = x1(iii) + hiii;
-                x1(jjj) = x1(jjj) + hjjj;
-                f1 = F(x1);
 
-                x2 = x0;
-                x2(iii) = x2(iii) + hiii;
-                x2(jjj) = x2(jjj) - hjjj;
-                f2 = F(x2);
-
-                x3 = x0;
-                x3(iii) = x3(iii) - hiii;
-                x3(jjj) = x3(jjj) + hjjj;
-                f3 = F(x3);
-
-                x4 = x0;
-                x4(iii) = x4(iii) - hiii;
-                x4(jjj) = x4(jjj) - hjjj;
-                f4 = F(x4);
-
-                hij = (f1 - f2 - f3 + f4)/(4*hiii*hjjj);
-                H(iii,jjj) = hij;
-                H(jjj,iii) = hij;
-            end
-        end
-    end
-end
