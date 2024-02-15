@@ -39,7 +39,7 @@ n = 1;
 %   How far beyond data should spline go?
 factor = 1.01;
 %   How many optimization iterations
-nIters = 100;
+nIters = 500;
 
 %%   Implied information needed for spline
 %   Minimum and Maximum retention volumes that need to be interpolated
@@ -100,29 +100,67 @@ logLikeli = @(prm) -SECCostFunction(prm,k,M,VRmin,VRmax,dataVR,dataSizeAvg,dataS
 %   Prior distribution matching linear constrains in fmincon. This will
 %   result in "1" if constraints are met (i.e. log prior=-1) and "0" if
 %   constraints are not met (i.e. log prior = -Inf)
-logPrior = @(prm) -1 ./ all(A*(prm) <= b);
+logPrior = @(prm) -1 ./ ( all(A*(prm) <= b) .* all(prm <= ub') .* all(prm >= lb') );
 
 logPfun = @(prm) logLikeli(prm) + logPrior(prm);
-Nwalker=40;
-minit = (1+ 0.01*unifrnd(-1,1,nPrm,Nwalker)).*(bestPrm');
+Nwalker=100;
+minit = (1+ 0.02*unifrnd(-1,1,nPrm,Nwalker)).*(bestPrm');
 
 tic
-models = gwmcmc(minit, logPfun, 10000, 'StepSize',2);
+rng('default')
+nSamps = 10000;
+models = gwmcmc(minit, logPfun, nSamps,...
+    'StepSize',1.5,...
+    'ThinChain',10,...
+    'BurnIn',0.1,...
+    'Parallel',true);
 toc
-models=models(:,:);
+R = psrf(models)
+modelsFlat=models(:,:);
+%
+% modelsGR = permute(models,[3 1 2]);
+[~,~,ESS] = eacorr(models)
+thin = (size(models,2)*size(models,3))/min(ESS)
+%   ESS ~100 at minimum as a rule of thumb
 
-
+sampsThinned = models(:,:,1:round(thin):end);
+sampsThinnedFlat = sampsThinned(:,:);
+figure
+% Contours at 10%, 30%, 50%, 70%, 90%
+%
+ecornerplot(models,'ks',true,'color',[0 0.4470 0.7410],'scatter',false,'grid',true)
 
 %%
 VRplot = linspace(VRmin,VRmax-1e-6)';
 modelfcn = @(x,prm) IsplineEval(x,prm,k,M,VRmin,VRmax);
 
-hold on
 
-for iii=1:size(models,2)
-    plot(VRplot, modelfcn(VRplot, models(:,iii)),'k')
+
+
+postfcn = zeros(size(sampsThinnedFlat,2),length(VRplot));
+tic
+parfor iii=1:size(sampsThinnedFlat,2)
+    postfcn(iii,:) = modelfcn(VRplot,sampsThinnedFlat(:,iii));
 end
+toc
+Q = quantile(postfcn,[0.005 0.025 0.5 0.975 0.995]);
+%%
+% for iii=1:size(models,2)
+%     plot(VRplot, modelfcn(VRplot, models(:,iii)),'k')
+% end
+figure
+hold on
+plot(VRplot,Q(3,:),...
+    "Color",[0 0.4470 0.7410],...
+    "LineStyle",'-',...
+    'LineWidth',2,...
+    'DisplayName','MCMC Median');
 
+patch([VRplot', fliplr(VRplot')],...
+    [Q(1,:), fliplr(Q(5,:))],...
+    [0 0.4470 0.7410],...
+    'FaceAlpha',0.1,...
+    'DisplayName','MCMC 99%')
 
 
 
@@ -165,7 +203,7 @@ plot(VRplot,diamSimPlot,'LineWidth',2,'DisplayName','Spline')
 plot(vr_plot,10.^(y_fit),'LineStyle','--','LineWidth',2,'DisplayName','Cubic')
 xlabel('Retention volume / ml')
 ylabel('Particle core size / nm')
-% legend
+legend
 % set(gca,'YScale','log')
 hold off
 
