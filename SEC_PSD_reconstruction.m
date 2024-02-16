@@ -142,7 +142,7 @@ modelfcn = @(x,prm) IsplineEval(x,prm,k,M,VRmin,VRmax);
 postfcn = zeros(size(sampsThinnedFlat,2),length(VRplot));
 tic
 parfor iii=1:size(sampsThinnedFlat,2)
-    postfcn(iii,:) = modelfcn(VRplot,sampsThinnedFlat(:,iii));
+    postfcn(iii,:) = modelfcn(VRplot,[iKnot;sampsThinnedFlat(:,iii)]);
 end
 toc
 Q = quantile(postfcn,[0.005 0.025 0.5 0.975 0.995]);
