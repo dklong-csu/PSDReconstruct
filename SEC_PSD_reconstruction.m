@@ -2,8 +2,9 @@
 
 clc
 clear variables
-% close all
-addpath("gwmcmc\")
+close all
+%   Path to folder containing gwmcmc
+addpath("AIES\")
 
 rng('default')
 %%  Todo
