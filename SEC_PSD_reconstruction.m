@@ -90,28 +90,30 @@ A(end,n+1:end) = -ones(1,length(prm0)-n);
 b = zeros(size(A,1),1);
 b(1:n-1) = -0.1 * ones(n-1,1);
 bestPrmGlobal = simulannealbnd(F,prm0,lb,ub,optOptions);
-[bestPrm,fvalmin] = fmincon(F,bestPrmGlobal,A,b,[],[],lb,ub,[],optOptions);
+[bestPrm,fvalmin,~,~,~,df,ddf] = fmincon(F,bestPrmGlobal,A,b,[],[],lb,ub,[],optOptions);
 
 %%  Bayesian inversion
 %   Evaluate log likelihood at parameters from fmincon
-
+%   Knot location is super sensitive and difficult to infer so let us just
+%   set it as constant
+iKnot = bestPrm(1:n);
 % 
-logLikeli = @(prm) -SECCostFunction(prm,k,M,VRmin,VRmax,dataVR,dataSizeAvg,dataSizeStdDev.^2);
+logLikeli = @(prm) -SECCostFunction([iKnot(:);prm(:)],k,M,VRmin,VRmax,dataVR,dataSizeAvg,dataSizeStdDev.^2);
 %   Prior distribution matching linear constrains in fmincon. This will
 %   result in "1" if constraints are met (i.e. log prior=-1) and "0" if
 %   constraints are not met (i.e. log prior = -Inf)
-logPrior = @(prm) -1 ./ ( all(A*(prm) <= b) .* all(prm <= ub') .* all(prm >= lb') );
+logPrior = @(prm) -1 ./ ( all(A*([iKnot(:);prm(:)]) <= b) .* all([iKnot(:);prm(:)] <= ub') .* all([iKnot(:);prm(:)] >= lb') );
 
 logPfun = @(prm) logLikeli(prm) + logPrior(prm);
 Nwalker=100;
-minit = (1+ 0.02*unifrnd(-1,1,nPrm,Nwalker)).*(bestPrm');
+minit = (1+ 0.02*unifrnd(-1,1,nPrm-n,Nwalker)).*(bestPrm(n+1:end)');
 
 tic
 rng('default')
-nSamps = 10000;
+nSamps = 100000;
 models = gwmcmc(minit, logPfun, nSamps,...
     'StepSize',1.5,...
-    'ThinChain',10,...
+    'ThinChain',1,...
     'BurnIn',0.1,...
     'Parallel',true);
 toc
