@@ -1,4 +1,4 @@
-function [samples,R,sampsThinned] = SEC_SplineStatisticalFit(dataX,dataY,dataYvar,options)
+function [samples,R,sampsThinned,knot] = SEC_SplineStatisticalFit(dataX,dataY,dataYvar,options)
 
 arguments
 dataX {mustBeNonempty, mustBeFloat}
@@ -10,21 +10,25 @@ options.stepSize = 2.0
 options.nSamps = 10000
 options.thinChain = 1
 options.burnin = 0.1
-options.parallel = true
+options.parallel = false
 options.progressBar = true
 end
 
 %   Initial guess with normal optimization
 xfit = SEC_SplineFit(dataX,dataY,dataYvar);
-nPrm = length(xfit);
+
+%   Knot location is hard, so fix it to a single value now
+knot = xfit(2);
+nPrm = length(xfit)-1;
 
 %   Likelihood based on sum of squares
 %   exp(-0.5*sum of squares/variance) is form of normal distribution
 %   log of this is just: -0.5*sum of squares/variance
-logLikelihood = @(x) -0.5*SEC_SplineSumSquares(x,dataX,dataY,dataYvar);
+logLikelihood = @(x) -0.5*SEC_SplineSumSquares([x(1);knot;x(2:end)],dataX,dataY,dataYvar);
 
 %   Use a flat prior distribution but constrain
-inBounds = @(prm) (prm(1)>0) * (prm(2)>=min(dataX)) * (prm(2)<=max(dataX)) * all(prm(3:end)<0);
+% inBounds = @(prm) (prm(1)>0) * (prm(2)>=min(dataX)) * (prm(2)<=max(dataX)) * all(prm(3:end)<0);
+inBounds = @(prm) (prm(1)>0) * all(prm(3:end)<0);
 logPrior = @(x) -1/inBounds(x);
 
 %   Log posterior is sum of prior and likelihood
@@ -33,9 +37,12 @@ logPosterior = { logPrior logLikelihood};
 
 
 %   Generate initial samples
-minit = (1+ options.startPerturb*unifrnd(-1,1,nPrm,options.Nwalkers)).*(xfit(:));
-lb = [0; min(dataX);-Inf;-Inf;-Inf];
-ub = [Inf; max(dataX);0;0;0]; 
+xfitstat = [xfit(1) xfit(3:end)];
+minit = (1+ options.startPerturb*unifrnd(-1,1,nPrm,options.Nwalkers)).*(xfitstat(:));
+% lb = [0; min(dataX);-Inf;-Inf;-Inf];
+% ub = [Inf; max(dataX);0;0;0]; 
+lb = [0;-Inf;-Inf;-Inf];
+ub = [Inf; 0;0;0]; 
 for ccc=1:options.Nwalkers
     mcheck = minit(:,ccc);
     mcheck = min(mcheck,ub);
