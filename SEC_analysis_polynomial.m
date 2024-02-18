@@ -1,6 +1,12 @@
 clear variables
 close all
 clc
+addpath("gwmcmc\")
+rng('default')
+
+%%  File to save workspace data to
+
+svFileName = "polynomialCalibrationCurveFit.mat";
 %%  Data
 %   In Excel
 %   Column D - retention volume
@@ -36,13 +42,25 @@ dataYvar = dataSizeStdDev.^2;
 xbest = SEC_PolynomialFit(3,dataX,dataY,dataYvar);
 
 tic
-[samples,R,sampsThinned] = SEC_PolynomialStatisticalFit(dataX,dataY,3,dataYvar,...
+[~,R,sampsThinned] = SEC_PolynomialStatisticalFit(dataX,dataY,3,dataYvar,...
     'burnin',0.1,...
-    'nSamps',1000000,...
+    'nSamps',10000000,...
     'parallel',false,...
-    'Nwalkers',100,...
+    'Nwalkers',50,...
     'stepSize',1.5);
 toc
+%%
+%   Do we "pass" the convergence tests
+fprintf("___________________________________________________________\n")
+fprintf("Rhat \t\t\t <1.01 is ideal\n")
+fprintf("___________________________________________________________\n")
+for iii=1:length(R)
+    fprintf("Parameter %d \t\t %f\n",iii,R(iii))
+end
+fprintf("___________________________________________________________\n")
+
+fprintf("# Independent Samples (min 100 recommended):\t %d\n",numel(sampsThinned/size(sampsThinned,1)))
+fprintf("___________________________________________________________\n")
 
 %% Plot calibration curve fit
 
@@ -56,7 +74,8 @@ plotY = 10.^plotYlog10;
 %   Use thinned samples to approximate independent draws from posterior
 indepSamps = sampsThinned(:,:);
 %   More samples are better but minimum of ~100 is ideal
-nSimsStat = size(indepSamps,2);
+% nSimsStat = size(indepSamps,2);
+nSimsStat = 1000;
 %   Randomly sort the samples array
 plotSamps = indepSamps(:,randperm(nSimsStat));
 %   Evaluate the polynomial for each sample
@@ -90,36 +109,51 @@ hold off
 
 
 %%  Plot extinction-weighted PSD
+nExtCurvs = size(Extinction,2);
 
 %   Polynomial fit
 xfitpoly = flip(10.^polyval(xbest,Rv));
-qextpoly = xfitpoly .* flip(Extinction(:,1));
-areapoly = trapz(xfitpoly,qextpoly);
-qextpoly = qextpoly / areapoly;
 
-%   Bayesian fit median + 99% intervals
-qstatsplot = zeros(length(xfitpoly),nSimsStat);
-for iii=1:nSimsStat
-    xfitstats = flip(10.^polyval(plotSamps(:,iii),Rv));
-    qextstats = xfitstats .* flip(Extinction(:,1));
-    areastats = trapz(xfitstats,qextstats);
-    qextstats = qextstats / areastats;
-    qinterp = griddedInterpolant(xfitstats,qextstats,'makima','linear');
-    qstatsplot(:,iii) = qinterp(xfitpoly);
+qextpoly            = zeros(length(xfitpoly),nExtCurvs);
+qextPolyErrorLo     = zeros(length(xfitpoly),nExtCurvs);
+qextPolyErrorUp     = zeros(length(xfitpoly),nExtCurvs);
+qextPolyMedian      = zeros(length(xfitpoly),nExtCurvs);
+
+for iii=1:nExtCurvs
+    qextpoly(:,iii) = xfitpoly .* flip(Extinction(:,iii));
+    areapoly = trapz(xfitpoly,qextpoly(:,iii));
+    qextpoly(:,iii) = qextpoly(:,iii) / areapoly;
+    
+    %   Bayesian fit median + 99% intervals
+    qstatsplot = zeros(length(xfitpoly),nSimsStat);
+    for jjj=1:nSimsStat
+        xfitstats = flip(10.^polyval(plotSamps(:,jjj),Rv));
+        qextstats = xfitstats .* flip(Extinction(:,iii));
+        areastats = trapz(xfitstats,qextstats);
+        qextstats = qextstats / areastats;
+        qinterp = griddedInterpolant(xfitstats,qextstats,'makima','linear');
+        qstatsplot(:,jjj) = qinterp(xfitpoly);
+    end
+    Qqext = quantile(qstatsplot,[0.005 0.5 0.995],2);
+
+    qextPolyErrorLo(:,iii)      = Qqext(:,1);
+    qextPolyErrorUp(:,iii)      = Qqext(:,3);
+    qextPolyMedian(:,iii)       = Qqext(:,2);
+    
+    figure
+    
+    hold on
+    plot(xfitpoly, qextpoly(:,iii) ,'DisplayName','Polyfit')
+    
+    plot(xfitpoly, qextPolyMedian(:,iii), 'DisplayName','Bayesian median')
+    
+    patch([xfitpoly; flip(xfitpoly)],...
+        [qextPolyErrorLo(:,iii); flip(qextPolyErrorUp(:,iii))],...
+        [0 0.4470 0.7410],...
+        'FaceAlpha',0.1,...
+        'DisplayName','Bayesian 99%')
+    legend
+    hold off
 end
-Qqext = quantile(qstatsplot,[0.005 0.025 0.5 0.975 0.995],2);
 
-figure
-
-hold on
-plot(xfitpoly, qextpoly,'DisplayName','Polyfit')
-
-plot(xfitpoly, Qqext(:,3), 'DisplayName','Bayesian median')
-
-patch([xfitpoly; flip(xfitpoly)],...
-    [Qqext(:,1); flip(Qqext(:,5))],...
-    [0 0.4470 0.7410],...
-    'FaceAlpha',0.1,...
-    'DisplayName','Bayesian 99%')
-legend
-hold off
+save(svFileName,'-mat')
