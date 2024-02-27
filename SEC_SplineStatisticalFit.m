@@ -1,4 +1,4 @@
-function [samples,R,sampsThinned,knot] = SEC_SplineStatisticalFit(dataX,dataY,dataYvar,options)
+function [samples,knot] = SEC_SplineStatisticalFit(dataX,dataY,dataYvar,options)
 
 arguments
 dataX {mustBeNonempty, mustBeFloat}
@@ -15,7 +15,7 @@ options.progressBar = true
 end
 
 %   Initial guess with normal optimization
-xfit = SEC_SplineFit(dataX,dataY,dataYvar);
+[xfit,sigma2] = SEC_SplineFit(dataX,dataY);
 
 %   Knot location is hard, so fix it to a single value now
 knot = xfit(2);
@@ -24,7 +24,7 @@ nPrm = length(xfit)-1;
 %   Likelihood based on sum of squares
 %   exp(-0.5*sum of squares/variance) is form of normal distribution
 %   log of this is just: -0.5*sum of squares/variance
-logLikelihood = @(x) -0.5*SEC_SplineSumSquares([x(1);knot;x(2:end)],dataX,dataY,dataYvar);
+logLikelihood = @(x) -0.5*SEC_SplineSumSquares([x(1);knot;x(2:end)],dataX,dataY,sigma2);
 
 %   Use a flat prior distribution but constrain
 % inBounds = @(prm) (prm(1)>0) * (prm(2)>=min(dataX)) * (prm(2)<=max(dataX)) * all(prm(3:end)<0);
@@ -58,20 +58,20 @@ samples = gwmcmc(minit, logPosterior, options.nSamps,...
     'Parallel',options.parallel,...
     'ProgressBar',options.progressBar);
 
-R = psrf(samples);
+% R = psrf(samples);
 % modelsFlat=models(:,:);
 %
 % modelsGR = permute(models,[3 1 2]);
-[~,~,ESS] = eacorr(samples);
-thin = (size(samples,2)*size(samples,3))/min(ESS);
-%   ESS ~100 at minimum as a rule of thumb
-
-sampsThinned = samples(:,:,1:round(thin):end);
-% sampsThinnedFlat = sampsThinned(:,:);
-figure
-% Contours at 10%, 30%, 50%, 70%, 90%
-%
-ecornerplot(samples,'ks',true,'color',[0 0.4470 0.7410],'scatter',false,'grid',true)
+% [~,~,ESS] = eacorr(samples);
+% thin = (size(samples,2)*size(samples,3))/min(ESS);
+% %   ESS ~100 at minimum as a rule of thumb
+% 
+% sampsThinned = samples(:,:,1:round(thin):end);
+% % sampsThinnedFlat = sampsThinned(:,:);
+% figure
+% % Contours at 10%, 30%, 50%, 70%, 90%
+% %
+% ecornerplot(samples,'ks',true,'color',[0 0.4470 0.7410],'scatter',false,'grid',true)
 
 
 
